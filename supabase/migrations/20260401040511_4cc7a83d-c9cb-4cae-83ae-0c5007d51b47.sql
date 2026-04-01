@@ -1,0 +1,2 @@
+ALTER TABLE public.experiment_results DROP CONSTRAINT IF EXISTS experiment_results_subject_code_key;
+ALTER TABLE public.experiment_results ADD CONSTRAINT experiment_results_subject_code_block_number_key UNIQUE (subject_code, block_number);

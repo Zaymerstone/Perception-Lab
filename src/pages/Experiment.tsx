@@ -31,7 +31,16 @@ import {
  * N = start N minutes after the START of the previous block.
  * First entry is always 0 (first block starts immediately).
  */
-const BLOCK_TIMING = [0, 0, 0, 0, 0, 30, 30, 30, 30, 30];
+const BLOCK_TIMING = [
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+  30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
 
 type Phase =
   | "general_instructions"
@@ -39,7 +48,6 @@ type Phase =
   | "experiment_instructions"
   | "running"
   | "begin_real"
-  | "break"
   | "block_countdown"
   | "results"
   | "done";
@@ -87,7 +95,6 @@ const Experiment = () => {
   } | null);
   const [phase, setPhase] = useState<Phase>("general_instructions");
   const [isPractice, setIsPractice] = useState(true);
-  const [breakInfo, setBreakInfo] = useState({ done: 0, total: 0 });
   const [displayTrialIndex, setDisplayTrialIndex] = useState(0);
   const [biasResult, setBiasResult] = useState<{ dir: number; str: number } | null>(null);
 
@@ -143,8 +150,10 @@ const Experiment = () => {
     if (isPractice) {
       return plan.practiceTrials[trialIndexRef.current];
     }
-    return plan.trials[trialIndexRef.current];
-  }, [isPractice]);
+
+    const blockTrialOffset = currentBlock * CONFIG.blockSize;
+    return plan.trials[blockTrialOffset + trialIndexRef.current];
+  }, [isPractice, currentBlock]);
 
   const destroyResponseButtons = useCallback(() => {
     if (responseContainerRef.current) {
@@ -249,25 +258,22 @@ const Experiment = () => {
     }
   }, [totalBlocks]);
 
-  /** Generate a fresh plan for the current block and start running trials */
+  /** Start a real experiment block and reset block-local state */
   const startBlock = useCallback((blockIdx: number) => {
     requestFullscreen();
-    resetRNG();
-    const plan = planSFM();
-    planRef.current = plan;
+
+    if (!planRef.current) {
+      resetRNG();
+      planRef.current = planSFM();
+    }
+
     trialIndexRef.current = 0;
     setDisplayTrialIndex(0);
     blockTrialDataRef.current = [];
     bigDataRef.current = [];
     setCurrentBlock(blockIdx);
+    setIsPractice(false);
     blockStartTimeRef.current = Date.now();
-
-    // Only do practice on the very first block
-    if (blockIdx === 0) {
-      setIsPractice(plan.practiceTrials.length > 0);
-    } else {
-      setIsPractice(false);
-    }
 
     stateRef.current = 0;
     timerRef.current = new Timer();
@@ -480,17 +486,15 @@ const Experiment = () => {
           response_tilt_degrees: roundTo(resp / DEG, 6),
         });
 
-        if (trialIndexRef.current < plan.trials.length - 1) {
+        const blockTrialOffset = currentBlock * CONFIG.blockSize;
+        const realTrialsThisBlock = Math.min(
+          CONFIG.blockSize,
+          plan.trials.length - blockTrialOffset
+        );
+
+        if (trialIndexRef.current < realTrialsThisBlock - 1) {
           trialIndexRef.current++;
           setDisplayTrialIndex(trialIndexRef.current);
-          if ((trialIndexRef.current) % CONFIG.blockSize === 0) {
-            setBreakInfo({
-              done: trialIndexRef.current,
-              total: plan.trials.length,
-            });
-            setPhase("break");
-            return;
-          }
         } else {
           // Block finished — handle transition to next block
           handleBlockEnd();
@@ -827,7 +831,7 @@ const Experiment = () => {
             </p>
             <p>
               There will be <strong>{totalBlocks} blocks</strong> of{" "}
-              <strong>{plan.trials.length} trials</strong> each. Your data will
+              <strong>{Math.min(CONFIG.blockSize, plan.trials.length)} trials</strong> each. Your data will
               be stored anonymously. By proceeding, you agree to let us analyze
               this anonymous data.
             </p>
@@ -846,43 +850,6 @@ const Experiment = () => {
               }}
             >
               Begin Experiment
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (phase === "break") {
-    return renderInstructionShell(
-      <Card className="border-border/60 shadow-none">
-        <CardContent className="p-8 space-y-6 text-center">
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
-            Take a Short Break
-          </h2>
-          <p className="text-foreground/80">
-            Block {currentBlock + 1} of {totalBlocks} — You have completed{" "}
-            {breakInfo.done} of {breakInfo.total} trials in this block.
-          </p>
-          <div className="w-full bg-secondary rounded-full h-2 max-w-xs mx-auto">
-            <div
-              className="bg-primary h-2 rounded-full transition-all"
-              style={{
-                width: `${(breakInfo.done / breakInfo.total) * 100}%`,
-              }}
-            />
-          </div>
-          <div className="pt-4">
-            <Button
-              size="lg"
-              className="h-12 px-8 rounded-xl gap-3 group"
-              onClick={startTrials}
-            >
-              Continue
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Button>
           </div>
@@ -1007,18 +974,6 @@ const Experiment = () => {
         className="fixed inset-0 flex flex-col items-center justify-center"
         style={{ backgroundColor: `rgb(128,128,128)`, cursor: "none" }}
       >
-        <p className="absolute top-4 left-1/2 -translate-x-1/2 text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.6)" }}>
-          {isPractice ? "Practice" : (
-            <>
-              Block {currentBlock + 1} / {totalBlocks}
-              {planRef.current && (
-                <span className="ml-3">
-                  Trial {displayTrialIndex + 1} / {planRef.current.trials.length}
-                </span>
-              )}
-            </>
-          )}
-        </p>
         <div className="relative flex items-center justify-center" style={{ marginTop: "-20px", width: CONFIG.size, height: CONFIG.size }}>
           <canvas
             ref={canvasRef}
