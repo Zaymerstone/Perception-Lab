@@ -32,14 +32,10 @@ import {
  * First entry is always 0 (first block starts immediately).
  */
 const BLOCK_TIMING = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
-  30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+  30, 30, 30, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 type Phase =
@@ -55,7 +51,9 @@ type Phase =
 /** Play a short alarm beep using Web Audio API */
 function playAlarm() {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = new (
+      window.AudioContext || (window as any).webkitAudioContext
+    )();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -87,23 +85,28 @@ function formatCountdown(seconds: number): string {
 const Experiment = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const participantData = useRef(location.state as {
-    age?: string;
-    gender?: string;
-    vision?: string;
-    subjectCode?: string;
-  } | null);
+  const participantData = useRef(
+    location.state as {
+      age?: string;
+      gender?: string;
+      vision?: string;
+      subjectCode?: string;
+    } | null,
+  );
   const [phase, setPhase] = useState<Phase>("general_instructions");
   const [isPractice, setIsPractice] = useState(true);
   const [displayTrialIndex, setDisplayTrialIndex] = useState(0);
-  const [biasResult, setBiasResult] = useState<{ dir: number; str: number } | null>(null);
+  const [biasResult, setBiasResult] = useState<{
+    dir: number;
+    str: number;
+  } | null>(null);
 
   // Block tracking
   const [currentBlock, setCurrentBlock] = useState(0);
   const totalBlocks = BLOCK_TIMING.length;
   const blockStartTimeRef = useRef<number>(0); // timestamp (ms) when current block started
   const [countdownRemaining, setCountdownRemaining] = useState(0);
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownDeadlineRef = useRef<number>(0); // absolute timestamp (ms) when countdown ends
   const alarm60PlayedRef = useRef(false);
   const alarm30PlayedRef = useRef(false);
   const alarm10PlayedRef = useRef(false);
@@ -116,15 +119,17 @@ const Experiment = () => {
   const animFrameRef = useRef<number>(0);
   const planRef = useRef<ExperimentPlan | null>(null);
   const responseDataRef = useRef<number[]>([]);
-  const blockTrialDataRef = useRef<Array<{
-    subject_code: string;
-    block_number: number;
-    trial_number: number;
-    timestamp: string;
-    tilt_degrees: number;
-    user_selection: "left" | "right";
-    response_tilt_degrees: number;
-  }>>([]);
+  const blockTrialDataRef = useRef<
+    Array<{
+      subject_code: string;
+      block_number: number;
+      trial_number: number;
+      timestamp: string;
+      tilt_degrees: number;
+      user_selection: "left" | "right";
+      response_tilt_degrees: number;
+    }>
+  >([]);
   const bigDataRef = useRef<number[][]>([]);
 
   // Trial state refs
@@ -137,7 +142,11 @@ const Experiment = () => {
   const stimFramesCountRef = useRef(0);
 
   // Response refs
-  const responseRef = useRef<{ responded: boolean; resp: number; respButton: number }>({
+  const responseRef = useRef<{
+    responded: boolean;
+    resp: number;
+    respButton: number;
+  }>({
     responded: false,
     resp: 0,
     respButton: 0,
@@ -161,38 +170,39 @@ const Experiment = () => {
     }
   }, []);
 
-  const createResponseButtons = useCallback(
-    (trial: SFMTrial) => {
-      const ang = trial.tilt;
-      const angs = [mod(ang, 360 * DEG), mod(ang + 180 * DEG, 360 * DEG)];
-      if (seededRandom() < 0.5) angs.reverse();
-      responseAngsRef.current = angs;
+  const createResponseButtons = useCallback((trial: SFMTrial) => {
+    const ang = trial.tilt;
+    const angs = [mod(ang, 360 * DEG), mod(ang + 180 * DEG, 360 * DEG)];
+    if (seededRandom() < 0.5) angs.reverse();
+    responseAngsRef.current = angs;
 
-      responseRef.current = { responded: false, resp: 0, respButton: 0 };
+    responseRef.current = { responded: false, resp: 0, respButton: 0 };
 
-      const container = responseContainerRef.current;
-      if (!container) return;
-      container.innerHTML = "";
+    const container = responseContainerRef.current;
+    if (!container) return;
+    container.innerHTML = "";
 
-      const probeImg = probeImgRef.current;
+    const probeImg = probeImgRef.current;
 
-      // Add arrow key labels
-      for (let i = 0; i < 2; i++) {
-        const wrapper = document.createElement("div");
-        wrapper.style.display = "flex";
-        wrapper.style.flexDirection = "column";
-        wrapper.style.alignItems = "center";
-        wrapper.style.margin = "0 140px";
+    // Add arrow key labels
+    for (let i = 0; i < 2; i++) {
+      const wrapper = document.createElement("div");
+      wrapper.style.display = "flex";
+      wrapper.style.flexDirection = "column";
+      wrapper.style.alignItems = "center";
+      wrapper.style.margin = "0 140px";
 
-        const btnCanvas = renderProbeButton(angs[i], false, probeImg ?? undefined);
-        btnCanvas.style.borderRadius = "8px";
+      const btnCanvas = renderProbeButton(
+        angs[i],
+        false,
+        probeImg ?? undefined,
+      );
+      btnCanvas.style.borderRadius = "8px";
 
-        wrapper.appendChild(btnCanvas);
-        container.appendChild(wrapper);
-      }
-    },
-    []
-  );
+      wrapper.appendChild(btnCanvas);
+      container.appendChild(wrapper);
+    }
+  }, []);
 
   // Keyboard listener for arrow key responses during trials
   useEffect(() => {
@@ -219,44 +229,56 @@ const Experiment = () => {
   const expStartTimeRef = useRef<number>(Date.now());
 
   /** Submit one block's data to Supabase */
-  const submitBlockResults = useCallback(async (blockIdx: number, blockTrials: typeof blockTrialDataRef.current, blockRawData: number[][]) => {
-    const p = participantData.current;
-    const rawLines = blockRawData.map((row) => row.join("\t")).join("\n");
+  const submitBlockResults = useCallback(
+    async (
+      blockIdx: number,
+      blockTrials: typeof blockTrialDataRef.current,
+      blockRawData: number[][],
+    ) => {
+      const p = participantData.current;
+      const rawLines = blockRawData.map((row) => row.join("\t")).join("\n");
 
-    const metadata = {
-      window_size: `${window.innerWidth}x${window.innerHeight}`,
-      screen_size: `${screen.width}x${screen.height}`,
-      useragent: navigator.userAgent,
-      platform: navigator.platform,
-      timestamp: new Date().toISOString(),
-      frameRate: CONFIG.frameRate,
-      stimDur: CONFIG.stimDur,
-      fpDur: CONFIG.fpDur,
-      blockSize: CONFIG.blockSize,
-      stimRadius: CONFIG.stimRadius,
-      total_blocks: totalBlocks,
-      block_timing: BLOCK_TIMING,
-      trials: blockTrials,
-    };
+      const metadata = {
+        window_size: `${window.innerWidth}x${window.innerHeight}`,
+        screen_size: `${screen.width}x${screen.height}`,
+        useragent: navigator.userAgent,
+        platform: navigator.platform,
+        timestamp: new Date().toISOString(),
+        frameRate: CONFIG.frameRate,
+        stimDur: CONFIG.stimDur,
+        fpDur: CONFIG.fpDur,
+        blockSize: CONFIG.blockSize,
+        stimRadius: CONFIG.stimRadius,
+        total_blocks: totalBlocks,
+        block_timing: BLOCK_TIMING,
+        trials: blockTrials,
+      };
 
-    const { error } = await supabase.from("experiment_results").insert({
-      participant_age: p?.age ?? null,
-      participant_gender: p?.gender ?? null,
-      participant_vision: p?.vision ?? null,
-      subject_code: p?.subjectCode ?? null,
-      block_number: blockIdx + 1,
-      experiment_type: "sfm",
-      raw_data_string: rawLines,
-      metadata,
-    });
+      const { error } = await supabase.from("experiment_results").insert({
+        participant_age: p?.age ?? null,
+        participant_gender: p?.gender ?? null,
+        participant_vision: p?.vision ?? null,
+        subject_code: p?.subjectCode ?? null,
+        block_number: blockIdx + 1,
+        experiment_type: "sfm",
+        raw_data_string: rawLines,
+        metadata,
+      });
 
-    if (error) {
-      console.error("Failed to save block results:", error);
-      toast({ title: "Warning", description: "Could not save block data. Please contact the researcher.", variant: "destructive" });
-    } else {
-      console.log(`Block ${blockIdx + 1} results saved successfully`);
-    }
-  }, [totalBlocks]);
+      if (error) {
+        console.error("Failed to save block results:", error);
+        toast({
+          title: "Warning",
+          description:
+            "Could not save block data. Please contact the researcher.",
+          variant: "destructive",
+        });
+      } else {
+        console.log(`Block ${blockIdx + 1} results saved successfully`);
+      }
+    },
+    [totalBlocks],
+  );
 
   /** Start a real experiment block and reset block-local state */
   const startBlock = useCallback((blockIdx: number) => {
@@ -287,7 +309,7 @@ const Experiment = () => {
     const blockTrials = [...blockTrialDataRef.current];
     const blockRawData = [...bigDataRef.current];
     submitBlockResults(currentBlock, blockTrials, blockRawData);
-    
+
     // Reset for next block
     blockTrialDataRef.current = [];
     bigDataRef.current = [];
@@ -313,6 +335,7 @@ const Experiment = () => {
       if (remainingRest <= 0) {
         startBlock(nextBlockIdx);
       } else {
+        countdownDeadlineRef.current = Date.now() + remainingRest * 1000;
         setCountdownRemaining(remainingRest);
         alarm60PlayedRef.current = remainingRest <= 60;
         alarm30PlayedRef.current = remainingRest <= 30;
@@ -323,51 +346,75 @@ const Experiment = () => {
     }
   }, [currentBlock, totalBlocks, startBlock, submitBlockResults]);
 
-  // Countdown timer effect
+  // Countdown timer effect without tab issue
   useEffect(() => {
-    if (phase !== "block_countdown") {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
-      return;
-    }
+    if (phase !== "block_countdown") return;
 
-    countdownIntervalRef.current = setInterval(() => {
-      setCountdownRemaining((prev) => {
-        const next = prev - 1;
-        // Play alarm at 60 seconds remaining
-        if (next === 60 && !alarm60PlayedRef.current) {
-          alarm60PlayedRef.current = true;
-          playAlarm();
-        }
-        // Play alarm at 30 seconds remaining
-        if (next === 30 && !alarm30PlayedRef.current) {
-          alarm30PlayedRef.current = true;
-          playAlarm();
-        }
-        // Play alarm at 10 seconds remaining
-        if (next === 10 && !alarm10PlayedRef.current) {
-          alarm10PlayedRef.current = true;
-          playAlarm();
-        }
-        // Play alarm at 0
-        if (next <= 0) {
-          if (!alarm0PlayedRef.current) {
-            alarm0PlayedRef.current = true;
-            playAlarm();
-          }
-          return 0;
-        }
-        return next;
-      });
+    let rafId: number;
+    const tick = () => {
+      const nowMs = Date.now();
+      const remainingSec = Math.max(
+        0,
+        Math.ceil((countdownDeadlineRef.current - nowMs) / 1000),
+      );
+
+      // Alarm triggers based on crossing thresholds
+      if (remainingSec <= 60 && !alarm60PlayedRef.current) {
+        alarm60PlayedRef.current = true;
+        playAlarm();
+      }
+      if (remainingSec <= 30 && !alarm30PlayedRef.current) {
+        alarm30PlayedRef.current = true;
+        playAlarm();
+      }
+      if (remainingSec <= 10 && !alarm10PlayedRef.current) {
+        alarm10PlayedRef.current = true;
+        playAlarm();
+      }
+      if (remainingSec <= 0 && !alarm0PlayedRef.current) {
+        alarm0PlayedRef.current = true;
+        playAlarm();
+      }
+
+      setCountdownRemaining(remainingSec);
+
+      if (remainingSec > 0) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    // Also use setInterval as a fallback when tab is in background (rAF pauses)
+    const intervalId = setInterval(() => {
+      const nowMs = Date.now();
+      const remainingSec = Math.max(
+        0,
+        Math.ceil((countdownDeadlineRef.current - nowMs) / 1000),
+      );
+
+      if (remainingSec <= 60 && !alarm60PlayedRef.current) {
+        alarm60PlayedRef.current = true;
+        playAlarm();
+      }
+      if (remainingSec <= 30 && !alarm30PlayedRef.current) {
+        alarm30PlayedRef.current = true;
+        playAlarm();
+      }
+      if (remainingSec <= 10 && !alarm10PlayedRef.current) {
+        alarm10PlayedRef.current = true;
+        playAlarm();
+      }
+      if (remainingSec <= 0 && !alarm0PlayedRef.current) {
+        alarm0PlayedRef.current = true;
+        playAlarm();
+      }
+
+      setCountdownRemaining(remainingSec);
     }, 1000);
 
     return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
+      cancelAnimationFrame(rafId);
+      clearInterval(intervalId);
     };
   }, [phase]);
 
@@ -489,7 +536,7 @@ const Experiment = () => {
         const blockTrialOffset = currentBlock * CONFIG.blockSize;
         const realTrialsThisBlock = Math.min(
           CONFIG.blockSize,
-          plan.trials.length - blockTrialOffset
+          plan.trials.length - blockTrialOffset,
         );
 
         if (trialIndexRef.current < realTrialsThisBlock - 1) {
@@ -512,7 +559,14 @@ const Experiment = () => {
     if (plan.showFrame) {
       ctx.fillStyle = CONFIG.frameCol;
       ctx.beginPath();
-      ctx.arc(CONFIG.size / 2, CONFIG.size / 2, CONFIG.size / 2, 0, Math.PI * 2, true);
+      ctx.arc(
+        CONFIG.size / 2,
+        CONFIG.size / 2,
+        CONFIG.size / 2,
+        0,
+        Math.PI * 2,
+        true,
+      );
       ctx.fill();
     }
 
@@ -528,11 +582,21 @@ const Experiment = () => {
     ctx.clip();
 
     ctx.fillStyle = `rgb(128,128,128)`;
-    ctx.fillRect(-CONFIG.stimRadius, -CONFIG.stimRadius, CONFIG.stimRadius * 2, CONFIG.stimRadius * 2);
+    ctx.fillRect(
+      -CONFIG.stimRadius,
+      -CONFIG.stimRadius,
+      CONFIG.stimRadius * 2,
+      CONFIG.stimRadius * 2,
+    );
 
     if (plan.showFrame) {
       ctx.fillStyle = CONFIG.frameCol;
-      ctx.fillRect(-CONFIG.stimRadius, -CONFIG.stimRadius, CONFIG.stimRadius * 2, CONFIG.stimRadius * 2);
+      ctx.fillRect(
+        -CONFIG.stimRadius,
+        -CONFIG.stimRadius,
+        CONFIG.stimRadius * 2,
+        CONFIG.stimRadius * 2,
+      );
     }
 
     ctx.restore();
@@ -546,16 +610,16 @@ const Experiment = () => {
 
     if (drawStim) {
       const frameIdx = Math.round(
-        (t - startStateTRef.current) * CONFIG.frameRate
+        (t - startStateTRef.current) * CONFIG.frameRate,
       );
       const clampedFrame = Math.max(
         0,
-        Math.min(frameIdx, framesRef.current.length - 1)
+        Math.min(frameIdx, framesRef.current.length - 1),
       );
       ctx.drawImage(
         framesRef.current[clampedFrame],
         -CONFIG.stimRadius,
-        -CONFIG.stimRadius
+        -CONFIG.stimRadius,
       );
       stimFramesCountRef.current++;
     }
@@ -616,9 +680,11 @@ const Experiment = () => {
     setCurrentBlock(0);
     setIsPractice(plan.practiceTrials.length > 0);
     // Preload probe image
-    loadProbeImage().then((img) => {
-      probeImgRef.current = img;
-    }).catch((e) => console.warn("Could not load probe image:", e));
+    loadProbeImage()
+      .then((img) => {
+        probeImgRef.current = img;
+      })
+      .catch((e) => console.warn("Could not load probe image:", e));
     setPhase("experiment_instructions");
   }, []);
 
@@ -639,10 +705,7 @@ const Experiment = () => {
     if (phase === "results" && biasCanvasRef.current) {
       const plan = planRef.current;
       if (plan && responseDataRef.current.length > 0) {
-        const result = showBias(
-          responseDataRef.current,
-          biasCanvasRef.current
-        );
+        const result = showBias(responseDataRef.current, biasCanvasRef.current);
         setBiasResult({ dir: result.biasDir, str: result.biasStr });
       }
     }
@@ -661,7 +724,10 @@ const Experiment = () => {
     </header>
   );
 
-  const renderInstructionShell = (children: React.ReactNode, hideBack = false) => (
+  const renderInstructionShell = (
+    children: React.ReactNode,
+    hideBack = false,
+  ) => (
     <div className="min-h-screen bg-background">
       {renderHeader()}
       <main className="container max-w-2xl mx-auto px-6 py-12 md:py-20">
@@ -693,15 +759,16 @@ const Experiment = () => {
           <div className="space-y-4 text-foreground/80 leading-relaxed">
             <p>
               You will participate in an experiment consisting of{" "}
-              <strong>{totalBlocks} blocks</strong> of trials. Each trial shows a brief animated
-              display. Following the display, you will answer a question about what you saw by
-              clicking one of two icons. Specific instructions will be given before the experiment
-              begins.
+              <strong>{totalBlocks} blocks</strong> of trials. Each trial shows
+              a brief animated display. Following the display, you will answer a
+              question about what you saw by clicking one of two icons. Specific
+              instructions will be given before the experiment begins.
             </p>
             <p>
               The goal is to study how people differ in their perception of
-              simple visual scenes. We prefer not to give more information before
-              you complete the experiment, to avoid influencing your responses.
+              simple visual scenes. We prefer not to give more information
+              before you complete the experiment, to avoid influencing your
+              responses.
             </p>
           </div>
           <div className="pt-4">
@@ -715,7 +782,7 @@ const Experiment = () => {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>,
     );
   }
 
@@ -736,8 +803,8 @@ const Experiment = () => {
             </p>
             <p>
               It's best to do the experiment in a calm environment where you
-              won't be disturbed. Please sit upright without leaning your head to
-              either side (this is important), at a comfortable distance from
+              won't be disturbed. Please sit upright without leaning your head
+              to either side (this is important), at a comfortable distance from
               your screen.
             </p>
             <p className="font-medium text-foreground">
@@ -756,7 +823,7 @@ const Experiment = () => {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>,
     );
   }
 
@@ -775,9 +842,9 @@ const Experiment = () => {
           </h2>
           <div className="space-y-4 text-foreground/80 leading-relaxed">
             <p>
-              After a briefly presented cross — which you should look at —
-              you will see a cloud of moving black dots. It should give you
-              the impression of a round surface like a plate,{" "}
+              After a briefly presented cross — which you should look at — you
+              will see a cloud of moving black dots. It should give you the
+              impression of a round surface like a plate,{" "}
               <strong>but that is slanted</strong>.
             </p>
             <p>
@@ -785,17 +852,19 @@ const Experiment = () => {
               <strong>
                 report which way this surface is slanted or inclined
               </strong>
-              , by choosing from two icons that will appear below the
-              display using the <strong>left</strong> and <strong>right arrow keys</strong> on your keyboard.
+              , by choosing from two icons that will appear below the display
+              using the <strong>left</strong> and{" "}
+              <strong>right arrow keys</strong> on your keyboard.
             </p>
             <p>
-              Please press the arrow key corresponding to the icon closest to the way the surface is
-              slanted, disregarding its motion. Sometimes the choice won't be
-              obvious — choose the one that intuitively seems best.
+              Please press the arrow key corresponding to the icon closest to
+              the way the surface is slanted, disregarding its motion. Sometimes
+              the choice won't be obvious — choose the one that intuitively
+              seems best.
             </p>
             <p className="text-sm text-muted-foreground italic">
-              You will now do {CONFIG.nPracticeTrials} practice trials before the
-              real experiment begins.
+              You will now do {CONFIG.nPracticeTrials} practice trials before
+              the real experiment begins.
             </p>
           </div>
           <div className="pt-4">
@@ -809,7 +878,7 @@ const Experiment = () => {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>,
     );
   }
 
@@ -826,18 +895,20 @@ const Experiment = () => {
           </h2>
           <div className="space-y-4 text-foreground/80 leading-relaxed">
             <p>
-              Good job! You've completed the practice trials. The real experiment
-              will now begin.
+              Good job! You've completed the practice trials. The real
+              experiment will now begin.
             </p>
             <p>
               There will be <strong>{totalBlocks} blocks</strong> of{" "}
-              <strong>{Math.min(CONFIG.blockSize, plan.trials.length)} trials</strong> each. Your data will
-              be stored anonymously. By proceeding, you agree to let us analyze
-              this anonymous data.
+              <strong>
+                {Math.min(CONFIG.blockSize, plan.trials.length)} trials
+              </strong>{" "}
+              each. Your data will be stored anonymously. By proceeding, you
+              agree to let us analyze this anonymous data.
             </p>
             <p className="text-sm text-muted-foreground">
-              Please make sure your window is as large as possible so you can see
-              the response icons below the stimulus.
+              Please make sure your window is as large as possible so you can
+              see the response icons below the stimulus.
             </p>
           </div>
           <div className="pt-4">
@@ -854,7 +925,7 @@ const Experiment = () => {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>,
     );
   }
 
@@ -863,7 +934,10 @@ const Experiment = () => {
     const isReady = countdownRemaining <= 0;
     const nextBlockIdx = currentBlock + 1;
     const progress = BLOCK_TIMING[nextBlockIdx]
-      ? Math.max(0, 100 - (countdownRemaining / (BLOCK_TIMING[nextBlockIdx] * 60)) * 100)
+      ? Math.max(
+          0,
+          100 - (countdownRemaining / (BLOCK_TIMING[nextBlockIdx] * 60)) * 100,
+        )
       : 100;
 
     return renderInstructionShell(
@@ -884,9 +958,7 @@ const Experiment = () => {
             <>
               <div className="flex flex-col items-center gap-4 py-6">
                 <Clock className="h-10 w-10 text-muted-foreground animate-pulse" />
-                <div
-                  className="text-5xl font-mono font-bold tracking-widest text-foreground tabular-nums"
-                >
+                <div className="text-5xl font-mono font-bold tracking-widest text-foreground tabular-nums">
                   {formatCountdown(countdownRemaining)}
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -902,7 +974,8 @@ const Experiment = () => {
               </div>
 
               <p className="text-xs text-muted-foreground italic">
-                Please stay nearby. An alarm will sound when it's time to continue.
+                Please stay nearby. An alarm will sound when it's time to
+                continue.
               </p>
             </>
           ) : (
@@ -928,7 +1001,7 @@ const Experiment = () => {
           )}
         </CardContent>
       </Card>,
-      true
+      true,
     );
   }
 
@@ -949,7 +1022,6 @@ const Experiment = () => {
               us with our research.
             </p>
 
-
             <div className="pt-4">
               <Button
                 variant="outline"
@@ -963,7 +1035,7 @@ const Experiment = () => {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </div>,
     );
   }
 
@@ -974,7 +1046,14 @@ const Experiment = () => {
         className="fixed inset-0 flex flex-col items-center justify-center"
         style={{ backgroundColor: `rgb(128,128,128)`, cursor: "none" }}
       >
-        <div className="relative flex items-center justify-center" style={{ marginTop: "-20px", width: CONFIG.size, height: CONFIG.size }}>
+        <div
+          className="relative flex items-center justify-center"
+          style={{
+            marginTop: "-20px",
+            width: CONFIG.size,
+            height: CONFIG.size,
+          }}
+        >
           <canvas
             ref={canvasRef}
             width={CONFIG.size}
