@@ -142,7 +142,8 @@ export interface TrialResult {
 export function planSFM(): ExperimentPlan {
   const nTilts = 16;
   const shearValues = [+0.5];
-  const nRep = 109;
+  //const nRep = 109;
+  const nRep = 4;    // MW
 
   const practiceTrials: SFMTrial[] = [];
   for (let k = 0; k < CONFIG.nPracticeTrials; k++) {
