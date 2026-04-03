@@ -31,6 +31,7 @@ import {
  * N = start N minutes after the START of the previous block.
  * First entry is always 0 (first block starts immediately).
  */
+/*
 const BLOCK_TIMING = [
   // 45 blocks with no rest
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -48,6 +49,8 @@ const BLOCK_TIMING = [
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0,
 ];
+*/
+const BLOCK_TIMING = [0, 5, 0, 5];    // MW
 
 type Phase =
   | "general_instructions"
