@@ -10,7 +10,7 @@ export const CONFIG = {
   stimRadius: 200,
   dotRadius: 0.02,
   stimDur: 0.5,
-  nPracticeTrials: 10,
+  nPracticeTrials: 16,
   blockSize: 16,
   fpDur: 0.750,
   fpLen: 0.15,
@@ -142,7 +142,7 @@ export interface TrialResult {
 export function planSFM(): ExperimentPlan {
   const nTilts = 16;
   const shearValues = [+0.5];
-  const nRep = 79;
+  const nRep = 109;
 
   const practiceTrials: SFMTrial[] = [];
   for (let k = 0; k < CONFIG.nPracticeTrials; k++) {
